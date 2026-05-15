@@ -238,10 +238,18 @@ def parse_game(text, home_team='ホーム', away_team='アウェイ'):
 # 勝率計算
 # =====================
 
+def detect_total_innings(at_bats):
+    """延長を含む最大イニングを自動検出"""
+    if not at_bats:
+        return 9
+    max_inning = max(ab['inning'] for ab in at_bats)
+    return max(9, max_inning)
+
+
 def win_prob(inning, half, outs, score_diff, total_innings=9):
     """
     スコア差・イニング・アウト数から勝率を計算（ホームチーム視点）
-    シグモイド関数ベース。試合終盤ほどスコア差の影響大。
+    延長戦にも対応。
     """
     if half == '表':
         remaining = (total_innings - inning) * 2 + 2
@@ -249,12 +257,23 @@ def win_prob(inning, half, outs, score_diff, total_innings=9):
         remaining = (total_innings - inning) * 2 + 1
 
     remaining = max(remaining, 0)
-    progress  = 1 - remaining / (total_innings * 2)
 
-    # 終盤になるほどスコア差の影響を強める
-    k = 0.4 + progress * 1.8
+    # 延長戦: 残り少ない場面なのでスコア差の影響を強める
+    base_denominator = max(total_innings, 9) * 2
+    progress = 1 - remaining / base_denominator
+
+    # 延長は特に終盤感が強い → k を高めに
+    if inning > 9:
+        k = 2.0 + (inning - 9) * 0.2
+    else:
+        k = 0.4 + progress * 1.8
+
     x = score_diff * k
     prob = 1 / (1 + math.exp(-x))
+
+    # 延長同点は50%に近づける
+    if score_diff == 0:
+        prob = 0.5
 
     return round(min(0.97, max(0.03, prob)), 4)
 
@@ -324,13 +343,14 @@ if run_btn:
     st.markdown("---")
 
     # 勝率計算
+    total_innings = detect_total_innings(at_bats)  # 延長を自動検出
     wp_list  = []
     labels   = []
     tooltips = []
 
     for ab in at_bats:
         diff = ab['score_home_before'] - ab['score_away_before']
-        wp   = win_prob(ab['inning'], ab['half'], ab['outs_before'], diff)
+        wp   = win_prob(ab['inning'], ab['half'], ab['outs_before'], diff, total_innings)
         wp_list.append(wp)
         labels.append(f"{ab['inning']}回{ab['half']} {ab['batter']}")
         tooltips.append(
