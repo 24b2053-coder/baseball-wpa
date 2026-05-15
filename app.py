@@ -461,10 +461,12 @@ if run_btn:
     <canvas id="wpa-canvas" role="img" aria-label="{home_team}の勝率推移グラフ"></canvas>
   </div>
 
-  <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:#5a5a7a">
-    <span>← {away_team} 優勢</span>
-    <span id="progress-label" style="font-family:monospace"></span>
-    <span>{home_team} 優勢 →</span>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11px">
+    <div style="display:flex;flex-direction:column;gap:2px;color:#5a5a7a">
+      <span style="color:#c8102e">▲ {home_team} 優勢（上）</span>
+      <span style="color:#3b82f6">▼ {away_team} 優勢（下）</span>
+    </div>
+    <span id="progress-label" style="font-family:monospace;color:#5a5a7a"></span>
   </div>
 </div>
 
