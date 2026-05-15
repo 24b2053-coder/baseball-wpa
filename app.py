@@ -489,8 +489,7 @@ if run_btn:
             showgrid=True, gridcolor='#1a1a28',
             range=[0, 1],
             tickvals=[0, 0.25, 0.5, 0.75, 1.0],
-            ticktext=['0%', '25%', f'50%
-均衡', '75%', '100%'],
+            ticktext=['0%', '25%', '50%', '75%', '100%'],
             title='',
             color='#5a5a7a',
         ),
