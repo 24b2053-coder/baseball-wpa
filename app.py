@@ -134,6 +134,19 @@ def is_at_bat_end(text):
     return any(k in text for k in keywords)
 
 
+def detect_teams(text):
+    """テキストから先攻・後攻チーム名を自動検出"""
+    away = '不明'
+    home = '不明'
+    m_away = re.search(r'1回表\s+(.+?)の攻撃', text)
+    m_home = re.search(r'1回裏\s+(.+?)の攻撃', text)
+    if m_away:
+        away = m_away.group(1).strip()
+    if m_home:
+        home = m_home.group(1).strip()
+    return home, away
+
+
 def parse_game(text, home_team='ホーム', away_team='アウェイ'):
     """SPAIAテキスト → 打席リストに変換"""
     at_bats = []
@@ -286,8 +299,9 @@ with st.sidebar:
     st.markdown("## ⚾ Baseball WPA")
     st.markdown("---")
     st.markdown("### チーム設定")
-    home_team = st.text_input("ホームチーム（1回裏の攻撃）", value="楽天")
-    away_team = st.text_input("アウェイチーム（1回表の攻撃）", value="オリックス")
+    st.caption("テキストを貼ると自動検出されます")
+    home_team = st.text_input("ホームチーム（1回裏）", value="")
+    away_team = st.text_input("アウェイチーム（1回表）", value="")
     st.markdown("---")
     st.markdown("""
     **使い方**
@@ -319,6 +333,13 @@ if run_btn:
         st.stop()
 
     with st.spinner("解析中..."):
+        # チーム名自動検出（手動入力が空の場合）
+        auto_home, auto_away = detect_teams(raw_text)
+        if not home_team.strip():
+            home_team = auto_home
+        if not away_team.strip():
+            away_team = auto_away
+
         at_bats, final_home, final_away = parse_game(
             raw_text,
             home_team=home_team,
@@ -466,23 +487,30 @@ if run_btn:
     st.plotly_chart(fig, use_container_width=True)
 
     # 大きく動いた打席TOP5
+    # WPA = 打席後の勝率 - 打席前の勝率
+    # 打席前: その打席の開始スコアで計算
+    # 打席後: その打席の終了スコアで計算
     st.markdown("### 勝率が大きく動いた打席")
     impacts = []
     for i, ab in enumerate(at_bats):
-        prev = wp_list[i - 1] if i > 0 else 0.5
-        delta = wp_list[i] - prev
+        diff_before = ab['score_home_before'] - ab['score_away_before']
+        diff_after  = ab['score_home_after']  - ab['score_away_after']
+        wp_before = win_prob(ab['inning'], ab['half'], ab['outs_before'], diff_before, total_innings)
+        wp_after  = win_prob(ab['inning'], ab['half'], ab['outs_after'],  diff_after,  total_innings)
+        delta = wp_after - wp_before
         impacts.append((abs(delta), delta, ab, i))
     impacts.sort(key=lambda x: x[0], reverse=True)
 
     for rank, (_, delta, ab, i) in enumerate(impacts[:5], 1):
         icon  = "📈" if delta > 0 else "📉"
         color = "#22c55e" if delta > 0 else "#f87171"
-        score_str = f"{ab['score_away_before']}-{ab['score_home_before']}"
+        score_before = f"{ab['score_away_before']}-{ab['score_home_before']}"
+        score_after  = f"{ab['score_away_after']}-{ab['score_home_after']}"
         st.markdown(
             f"**{rank}.** {icon} "
             f"`{ab['inning']}回{ab['half']}` "
             f"**{ab['batter']}** "
-            f"スコア:{score_str} "
-            f"→ <span style='color:{color};font-family:monospace;font-weight:700'>{delta:+.1%}</span>",
+            f"スコア:{score_before}→{score_after} "
+            f"<span style='color:{color};font-family:monospace;font-weight:700'>{delta:+.1%}</span>",
             unsafe_allow_html=True,
         )
