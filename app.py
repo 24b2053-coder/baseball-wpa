@@ -2,12 +2,12 @@
 Baseball WPA - リアルタイム勝率予測
 SPAIAのテキストを貼り付けるだけで勝率グラフを表示
 """
- 
+
 import re
 import math
 import streamlit as st
 import plotly.graph_objects as go
- 
+
 # =====================
 # ページ設定
 # =====================
@@ -16,7 +16,7 @@ st.set_page_config(
     page_icon="⚾",
     layout="wide",
 )
- 
+
 st.markdown("""
 <style>
   /* 全体背景 */
@@ -63,12 +63,12 @@ st.markdown("""
   hr { border-color: #2a2a3e !important; }
 </style>
 """, unsafe_allow_html=True)
- 
- 
+
+
 # =====================
 # パーサー
 # =====================
- 
+
 def parse_runners(text):
     r1 = r2 = r3 = '0'
     if '走者なし' in text or 'ランナーなし' in text:
@@ -83,20 +83,20 @@ def parse_runners(text):
         if '二塁' in text: r2 = '1'
         if '三塁' in text: r3 = '1'
     return r1 + r2 + r3
- 
- 
+
+
 def parse_outs_label(text):
     for label, n in {'無死': 0, '一死': 1, '二死': 2}.items():
         if label in text:
             return n
     return 0
- 
- 
+
+
 def parse_outs_number(text):
     m = re.search(r'(\d)アウト', text)
     return int(m.group(1)) if m else None
- 
- 
+
+
 def parse_score(text):
     """どのチーム略称にも対応。ホームスコアを左として返す。"""
     m = re.search(
@@ -108,8 +108,8 @@ def parse_score(text):
     if m:
         return int(m.group(1)), int(m.group(2))
     return None, None
- 
- 
+
+
 def is_skip_line(text):
     keywords = [
         'けん制', '守備交代', '投手交代', 'コーチマウンド',
@@ -118,8 +118,8 @@ def is_skip_line(text):
         '→代打', '→代走',
     ]
     return any(k in text for k in keywords)
- 
- 
+
+
 def is_at_bat_end(text):
     if text.endswith(('ストライク', 'ボール', 'ファウル')):
         return False
@@ -132,8 +132,8 @@ def is_at_bat_end(text):
         '盗塁失敗', '走塁死', '試合終了',
     ]
     return any(k in text for k in keywords)
- 
- 
+
+
 def detect_teams(text):
     """テキストから先攻・後攻チーム名を自動検出"""
     away = '不明'
@@ -145,76 +145,76 @@ def detect_teams(text):
     if m_home:
         home = m_home.group(1).strip()
     return home, away
- 
- 
+
+
 def parse_game(text, home_team='ホーム', away_team='アウェイ'):
     """SPAIAテキスト → 打席リストに変換"""
     at_bats = []
     pattern = r'(\d+回(?:表|裏)\s+(?:.*?)の攻撃)'
     blocks = re.split(pattern, text)
- 
+
     score_home = 0
     score_away = 0
- 
+
     i = 1
     while i < len(blocks) - 1:
         header = blocks[i].strip()
         body   = blocks[i + 1] if i + 1 < len(blocks) else ''
         i += 2
- 
+
         m = re.match(r'(\d+)回(表|裏)', header)
         if not m:
             continue
- 
+
         inning = int(m.group(1))
         half   = m.group(2)
- 
+
         # 打席ブロック分割
         ab_texts = re.split(r'\n\d+\.\n', '\n' + body)
         ab_texts = [a.strip() for a in ab_texts if a.strip()]
- 
+
         for ab_text in ab_texts:
             lines = [l.strip() for l in ab_text.split('\n') if l.strip()]
             if not lines:
                 continue
- 
+
             # ヘッダー解析
             idx = 0
             batter_name = '不明'
- 
+
             if idx < len(lines) and re.match(r'\d+番', lines[idx]):
                 idx += 1
             elif idx < len(lines) and '代打' in lines[idx]:
                 idx += 1
- 
+
             if idx < len(lines) and not re.match(r'^\d+$', lines[idx]):
                 batter_name = lines[idx].strip()
                 idx += 1
- 
+
             situation = ''
             if idx < len(lines) and re.match(r'(無死|一死|二死)', lines[idx]):
                 situation = lines[idx]
                 idx += 1
- 
+
             outs_before    = parse_outs_label(situation)
             runners_before = parse_runners(situation)
             outs_after     = outs_before
             runners_after  = runners_before
             score_home_at_start = score_home
             score_away_at_start = score_away
- 
+
             all_lines = lines[idx:]
             for line_idx, line in enumerate(all_lines):
                 # スコア更新
                 sh, sa = parse_score(line)
                 if sh is not None:
                     score_home, score_away = sh, sa
- 
+
                 if is_skip_line(line):
                     continue
                 if re.match(r'^\d+$', line):
                     continue
- 
+
                 if is_at_bat_end(line):
                     n = parse_outs_number(line)
                     if n is not None:
@@ -229,7 +229,7 @@ def parse_game(text, home_team='ホーム', away_team='アウェイ'):
                             score_home, score_away = sh, sa
                             break
                     break
- 
+
             at_bats.append({
                 'inning':         inning,
                 'half':           half,
@@ -243,22 +243,22 @@ def parse_game(text, home_team='ホーム', away_team='アウェイ'):
                 'score_home_after':  score_home,
                 'score_away_after':  score_away,
             })
- 
+
     return at_bats, score_home, score_away
- 
- 
+
+
 # =====================
 # 勝率計算
 # =====================
- 
+
 def detect_total_innings(at_bats):
     """延長を含む最大イニングを自動検出"""
     if not at_bats:
         return 9
     max_inning = max(ab['inning'] for ab in at_bats)
     return max(9, max_inning)
- 
- 
+
+
 def win_prob(inning, half, outs, score_diff, total_innings=9):
     """
     スコア差・イニング・アウト数から勝率を計算（ホームチーム視点）
@@ -268,33 +268,33 @@ def win_prob(inning, half, outs, score_diff, total_innings=9):
         remaining = (total_innings - inning) * 2 + 2
     else:
         remaining = (total_innings - inning) * 2 + 1
- 
+
     remaining = max(remaining, 0)
- 
+
     # 延長戦: 残り少ない場面なのでスコア差の影響を強める
     base_denominator = max(total_innings, 9) * 2
     progress = 1 - remaining / base_denominator
- 
+
     # 延長は特に終盤感が強い → k を高めに
     if inning > 9:
         k = 2.0 + (inning - 9) * 0.2
     else:
         k = 0.4 + progress * 1.8
- 
+
     x = score_diff * k
     prob = 1 / (1 + math.exp(-x))
- 
+
     # 延長同点は50%に近づける
     if score_diff == 0:
         prob = 0.5
- 
+
     return round(min(0.97, max(0.03, prob)), 4)
- 
- 
+
+
 # =====================
 # サイドバー
 # =====================
- 
+
 with st.sidebar:
     st.markdown("## ⚾ Baseball WPA")
     st.markdown("---")
@@ -310,28 +310,28 @@ with st.sidebar:
     3. 右の入力欄に貼り付け
     4. パース実行ボタンを押す
     """)
- 
- 
+
+
 # =====================
 # メイン
 # =====================
- 
+
 st.markdown("# ⚾ リアルタイム勝率予測")
 st.markdown("---")
- 
+
 raw_text = st.text_area(
     "SPAIAのテキストを貼り付け",
     height=200,
     placeholder="1回表 ○○の攻撃\n1.\n1番\n選手名\n無死走者なし\n...",
 )
- 
+
 run_btn = st.button("⚡ パース実行", type="primary")
- 
+
 if run_btn:
     if not raw_text.strip():
         st.warning("テキストを貼り付けてください")
         st.stop()
- 
+
     with st.spinner("解析中..."):
         # チーム名自動検出（手動入力が空の場合）
         auto_home, auto_away = detect_teams(raw_text)
@@ -339,19 +339,19 @@ if run_btn:
             home_team = auto_home
         if not away_team.strip():
             away_team = auto_away
- 
+
         at_bats, final_home, final_away = parse_game(
             raw_text,
             home_team=home_team,
             away_team=away_team,
         )
- 
+
     if not at_bats:
         st.error("データを読み取れませんでした。テキストを確認してください。")
         st.stop()
- 
+
     st.success(f"✅ {len(at_bats)} 打席を解析しました")
- 
+
     # スコア表示
     col1, col2, col3 = st.columns([2, 1, 2])
     with col1:
@@ -360,15 +360,15 @@ if run_btn:
         st.markdown("<div style='text-align:center;font-size:28px;padding-top:12px;color:#5a5a7a'>—</div>", unsafe_allow_html=True)
     with col3:
         st.metric(home_team, final_home)
- 
+
     st.markdown("---")
- 
+
     # 勝率計算
     total_innings = detect_total_innings(at_bats)  # 延長を自動検出
     wp_list  = []
     labels   = []
     tooltips = []
- 
+
     for ab in at_bats:
         diff = ab['score_home_before'] - ab['score_away_before']
         wp   = win_prob(ab['inning'], ab['half'], ab['outs_before'], diff, total_innings)
@@ -381,7 +381,7 @@ if run_btn:
             f"{ab['outs_before']}死 {ab['runners_before']}<br>"
             f"勝率: {wp*100:.1f}%"
         )
- 
+
     # 試合終了時の最終スコアで勝率を追加（サヨナラ等の結末を反映）
     if at_bats:
         last = at_bats[-1]
@@ -394,7 +394,7 @@ if run_btn:
             f"最終スコア: {final_away}-{final_home}<br>"
             f"勝率: {final_wp*100:.1f}%"
         )
- 
+
     # イニング区切り
     inning_marks = []
     seen = set()
@@ -403,11 +403,196 @@ if run_btn:
         if key not in seen:
             inning_marks.append((i, f"{ab['inning']}回{ab['half']}"))
             seen.add(key)
- 
+
+    # =====================
+    # アニメーショングラフ（HTML埋め込み）
+    # =====================
+    import json
+
+    # 打席データをJSONに変換
+    anim_data = []
+    for i, ab in enumerate(at_bats):
+        diff_b = ab['score_home_before'] - ab['score_away_before']
+        diff_a = ab['score_home_after']  - ab['score_away_after']
+        wp_b = win_prob(ab['inning'], ab['half'], ab['outs_before'], diff_b, total_innings)
+        wp_a = win_prob(ab['inning'], ab['half'], ab['outs_after'],  diff_a,  total_innings)
+        delta = wp_a - wp_b
+        anim_data.append({
+            'label':  f"{ab['inning']}回{ab['half']}",
+            'batter': ab['batter'],
+            'wp':     wp_list[i],
+            'score':  f"{ab['score_away_before']}-{ab['score_home_before']}",
+            'outs':   ab['outs_before'],
+            'delta':  round(delta, 4),
+            'event':  f"{ab['batter']} {delta:+.0%}" if abs(delta) >= 0.08 else '',
+        })
+    # 試合終了ポイント
+    anim_data.append({
+        'label': '試合終了',
+        'batter': '試合終了',
+        'wp': wp_list[-1],
+        'score': f"{final_away}-{final_home}",
+        'outs': 3,
+        'delta': wp_list[-1] - wp_list[-2] if len(wp_list) >= 2 else 0,
+        'event': f"試合終了 {final_away}-{final_home}",
+    })
+
+    data_json = json.dumps(anim_data, ensure_ascii=False)
+    home_json = json.dumps(home_team, ensure_ascii=False)
+    away_json = json.dumps(away_team, ensure_ascii=False)
+
+    anim_html = f"""
+<div style="background:#0d0d14;border-radius:12px;padding:16px;margin-bottom:8px">
+
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+    <button id="btn-play" onclick="togglePlay()"
+      style="background:#7c6af5;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px">
+      ▶ 再生
+    </button>
+    <button onclick="resetAnim()"
+      style="background:#1e1e2e;color:#e8e8f0;border:1px solid #2a2a3e;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer">
+      ↺ リセット
+    </button>
+    <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#888">
+      <span>速度</span>
+      <input type="range" id="speed" min="1" max="5" value="3" step="1"
+        style="width:80px;accent-color:#7c6af5" oninput="onSpeedChange(this.value)">
+      <span id="speed-label" style="min-width:24px">×3</span>
+    </div>
+    <div id="event-label" style="font-size:12px;color:#f87171;margin-left:auto;font-family:monospace"></div>
+  </div>
+
+  <div style="position:relative;width:100%;height:300px">
+    <canvas id="wpa-canvas" role="img" aria-label="{home_team}の勝率推移グラフ"></canvas>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:#5a5a7a">
+    <span>← {away_team} 優勢</span>
+    <span id="progress-label" style="font-family:monospace"></span>
+    <span>{home_team} 優勢 →</span>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const RAW = {data_json};
+const HOME = {home_json};
+const AWAY = {away_json};
+let current = 0, timer = null, chart = null;
+
+const SPEEDS = [900, 550, 300, 160, 70];
+let speedIdx = 2;
+
+function getDelay() {{ return SPEEDS[speedIdx]; }}
+
+function buildChart() {{
+  if (chart) chart.destroy();
+  const ctx = document.getElementById('wpa-canvas').getContext('2d');
+  chart = new Chart(ctx, {{
+    type: 'line',
+    data: {{
+      labels: [],
+      datasets: [
+        {{
+          data: [], borderColor: '#e8e8f0', borderWidth: 2,
+          pointRadius: 5, pointBackgroundColor: [],
+          tension: 0.25, fill: false,
+        }},
+        {{
+          data: [], borderColor: 'transparent', borderWidth: 0,
+          pointRadius: 0, fill: {{target: 1, above: 'rgba(200,16,46,0.18)', below: 'rgba(59,130,246,0.18)'}},
+          tension: 0.25,
+        }},
+        {{
+          data: Array(RAW.length + 1).fill(0.5),
+          borderColor: 'rgba(80,80,150,0.4)', borderWidth: 1,
+          borderDash: [4,4], pointRadius: 0, fill: false,
+        }},
+      ]
+    }},
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      animation: {{ duration: 120 }},
+      plugins: {{ legend: {{ display: false }}, tooltip: {{ enabled: false }} }},
+      scales: {{
+        x: {{ ticks: {{ display: false }}, grid: {{ color: 'rgba(255,255,255,0.04)' }} }},
+        y: {{
+          min: 0, max: 1,
+          ticks: {{
+            color: '#5a5a7a', font: {{ size: 11 }},
+            callback: v => v === 0.5 ? '50%' : Math.round(v*100)+'%'
+          }},
+          grid: {{ color: ctx2 => Math.abs(ctx2.tick.value - 0.5) < 0.01 ? 'rgba(100,100,200,0.3)' : 'rgba(255,255,255,0.04)' }}
+        }}
+      }}
+    }}
+  }});
+}}
+
+function addPoint(i) {{
+  const d = RAW[i];
+  const wp = d.wp;
+  const color = wp >= 0.5 ? '#c8102e' : '#3b82f6';
+  chart.data.labels.push(d.label);
+  chart.data.datasets[0].data.push(wp);
+  chart.data.datasets[0].pointBackgroundColor.push(color);
+  chart.data.datasets[1].data.push(wp);
+  if (d.event && Math.abs(d.delta) >= 0.08) {{
+    const el = document.getElementById('event-label');
+    el.textContent = d.event + (d.delta > 0 ? ' ▲' : ' ▼');
+    el.style.color = d.delta > 0 ? '#22c55e' : '#f87171';
+  }}
+  document.getElementById('progress-label').textContent =
+    (i+1) + ' / ' + RAW.length + '打席　' + HOME + ' ' + Math.round(wp*100) + '%';
+  chart.update('none');
+}}
+
+function step() {{
+  if (current >= RAW.length) {{
+    clearInterval(timer); timer = null;
+    document.getElementById('btn-play').textContent = '▶ 再生';
+    return;
+  }}
+  addPoint(current++);
+}}
+
+function togglePlay() {{
+  const btn = document.getElementById('btn-play');
+  if (timer) {{
+    clearInterval(timer); timer = null;
+    btn.textContent = '▶ 再生';
+  }} else {{
+    if (current >= RAW.length) {{ buildChart(); current = 0; document.getElementById('event-label').textContent = ''; }}
+    btn.textContent = '⏸ 停止';
+    timer = setInterval(step, getDelay());
+  }}
+}}
+
+function resetAnim() {{
+  if (timer) {{ clearInterval(timer); timer = null; }}
+  document.getElementById('btn-play').textContent = '▶ 再生';
+  document.getElementById('event-label').textContent = '';
+  document.getElementById('progress-label').textContent = '';
+  buildChart(); current = 0;
+}}
+
+function onSpeedChange(v) {{
+  speedIdx = parseInt(v) - 1;
+  document.getElementById('speed-label').textContent = '×' + v;
+  if (timer) {{ clearInterval(timer); timer = setInterval(step, getDelay()); }}
+}}
+
+buildChart();
+</script>
+"""
+
+    st.components.v1.html(anim_html, height=380)
+    st.markdown("---")
+
     # グラフ描画（双方向 — 上=ホーム優勢 / 下=アウェイ優勢）
     fig = go.Figure()
     x_all = list(range(len(wp_list)))
- 
+
     # ホーム優勢エリア（50%以上）の塗りつぶし
     fig.add_trace(go.Scatter(
         x=x_all + x_all[::-1],
@@ -418,7 +603,7 @@ if run_btn:
         hoverinfo='skip',
         showlegend=False,
     ))
- 
+
     # アウェイ優勢エリア（50%以下）の塗りつぶし
     fig.add_trace(go.Scatter(
         x=x_all + x_all[::-1],
@@ -429,7 +614,7 @@ if run_btn:
         hoverinfo='skip',
         showlegend=False,
     ))
- 
+
     # メインライン
     fig.add_trace(go.Scatter(
         x=x_all,
@@ -445,7 +630,7 @@ if run_btn:
         hovertemplate='%{text}<extra></extra>',
         name='勝率',
     ))
- 
+
     # 50%中央ライン
     fig.add_hline(
         y=0.5,
@@ -453,7 +638,7 @@ if run_btn:
         line_color='#3a3a5e',
         line_width=1.5,
     )
- 
+
     # イニング区切り線＋ラベル
     for idx, label in inning_marks:
         fig.add_vline(x=idx, line_color='#1e1e2e', line_width=1)
@@ -462,7 +647,7 @@ if run_btn:
             font=dict(size=9, color='#5a5a7a'),
             yref='paper', xanchor='left',
         )
- 
+
     # 大きな変動にマーク
     for i in range(1, len(wp_list)):
         delta = wp_list[i] - wp_list[i - 1]
@@ -475,7 +660,7 @@ if run_btn:
                 font=dict(size=12, color=color),
                 yshift=16 if delta > 0 else -20,
             )
- 
+
     # チームラベル（右端）
     fig.add_annotation(
         x=len(wp_list)-1, y=0.97, text=f'← {home_team} 優勢',
@@ -487,7 +672,7 @@ if run_btn:
         showarrow=False, font=dict(size=10, color='#3b82f6'),
         xanchor='right', yanchor='bottom',
     )
- 
+
     fig.update_layout(
         title=dict(
             text=f'{away_team} vs {home_team} — 勝率推移',
@@ -514,9 +699,9 @@ if run_btn:
         showlegend=False,
         hovermode='x unified',
     )
- 
+
     st.plotly_chart(fig, use_container_width=True)
- 
+
     # 大きく動いた打席TOP5
     # WPA = 打席後の勝率 - 打席前の勝率
     # 打席前: その打席の開始スコアで計算
@@ -531,7 +716,7 @@ if run_btn:
         delta = wp_after - wp_before
         impacts.append((abs(delta), delta, ab, i))
     impacts.sort(key=lambda x: x[0], reverse=True)
- 
+
     for rank, (_, delta, ab, i) in enumerate(impacts[:5], 1):
         icon  = "📈" if delta > 0 else "📉"
         color = "#22c55e" if delta > 0 else "#f87171"
