@@ -391,23 +391,41 @@ if run_btn:
             inning_marks.append((i, f"{ab['inning']}回{ab['half']}"))
             seen.add(key)
 
-    # グラフ描画
+    # グラフ描画（双方向 — 上=ホーム優勢 / 下=アウェイ優勢）
     fig = go.Figure()
-
-    # 背景塗り分け（ホーム優勢=赤 / アウェイ優勢=青）
     x_all = list(range(len(wp_list)))
 
+    # ホーム優勢エリア（50%以上）の塗りつぶし
+    fig.add_trace(go.Scatter(
+        x=x_all + x_all[::-1],
+        y=[max(v, 0.5) for v in wp_list] + [0.5] * len(wp_list),
+        fill='toself',
+        fillcolor='rgba(200,16,46,0.15)',
+        line=dict(width=0),
+        hoverinfo='skip',
+        showlegend=False,
+    ))
+
+    # アウェイ優勢エリア（50%以下）の塗りつぶし
+    fig.add_trace(go.Scatter(
+        x=x_all + x_all[::-1],
+        y=[min(v, 0.5) for v in wp_list] + [0.5] * len(wp_list),
+        fill='toself',
+        fillcolor='rgba(59,130,246,0.15)',
+        line=dict(width=0),
+        hoverinfo='skip',
+        showlegend=False,
+    ))
+
+    # メインライン
     fig.add_trace(go.Scatter(
         x=x_all,
         y=wp_list,
-        fill='tozeroy',
-        fillcolor='rgba(124, 106, 245, 0.12)',
-        line=dict(color='#7c6af5', width=2.5),
         mode='lines+markers',
+        line=dict(color='#e8e8f0', width=2),
         marker=dict(
-            size=7,
-            color=wp_list,
-            colorscale=[[0, '#3b82f6'], [0.5, '#7c6af5'], [1, '#c8102e']],
+            size=6,
+            color=['#c8102e' if v >= 0.5 else '#3b82f6' for v in wp_list],
             line=dict(color='#0d0d14', width=1),
         ),
         text=tooltips,
@@ -415,44 +433,47 @@ if run_btn:
         name='勝率',
     ))
 
-    # 50%ライン
+    # 50%中央ライン
     fig.add_hline(
         y=0.5,
         line_dash='dash',
-        line_color='#2a2a3e',
+        line_color='#3a3a5e',
         line_width=1.5,
     )
 
     # イニング区切り線＋ラベル
     for idx, label in inning_marks:
-        fig.add_vline(
-            x=idx,
-            line_color='#1e1e2e',
-            line_width=1,
-        )
+        fig.add_vline(x=idx, line_color='#1e1e2e', line_width=1)
         fig.add_annotation(
-            x=idx,
-            y=1.06,
-            text=label,
-            showarrow=False,
+            x=idx, y=1.06, text=label, showarrow=False,
             font=dict(size=9, color='#5a5a7a'),
-            yref='paper',
-            xanchor='left',
+            yref='paper', xanchor='left',
         )
 
-    # WPA変動が大きかった打席にマーク
+    # 大きな変動にマーク
     for i in range(1, len(wp_list)):
         delta = wp_list[i] - wp_list[i - 1]
         if abs(delta) >= 0.08:
             color = '#22c55e' if delta > 0 else '#f87171'
             fig.add_annotation(
-                x=i,
-                y=wp_list[i],
+                x=i, y=wp_list[i],
                 text='▲' if delta > 0 else '▼',
                 showarrow=False,
                 font=dict(size=12, color=color),
-                yshift=14,
+                yshift=16 if delta > 0 else -20,
             )
+
+    # チームラベル（右端）
+    fig.add_annotation(
+        x=len(wp_list)-1, y=0.97, text=f'← {home_team} 優勢',
+        showarrow=False, font=dict(size=10, color='#c8102e'),
+        xanchor='right', yanchor='top',
+    )
+    fig.add_annotation(
+        x=len(wp_list)-1, y=0.03, text=f'← {away_team} 優勢',
+        showarrow=False, font=dict(size=10, color='#3b82f6'),
+        xanchor='right', yanchor='bottom',
+    )
 
     fig.update_layout(
         title=dict(
@@ -461,25 +482,23 @@ if run_btn:
             x=0.02,
         ),
         xaxis=dict(
-            showgrid=False,
-            zeroline=False,
-            title='打席',
-            color='#5a5a7a',
-            tickfont=dict(size=10),
+            showgrid=False, zeroline=False,
+            title='打席', color='#5a5a7a', tickfont=dict(size=10),
         ),
         yaxis=dict(
-            showgrid=True,
-            gridcolor='#1a1a28',
+            showgrid=True, gridcolor='#1a1a28',
             range=[0, 1],
-            tickformat='.0%',
-            title=f'{home_team} 勝率',
+            tickvals=[0, 0.25, 0.5, 0.75, 1.0],
+            ticktext=['0%', '25%', f'50%
+均衡', '75%', '100%'],
+            title='',
             color='#5a5a7a',
         ),
         plot_bgcolor='#0d0d14',
         paper_bgcolor='#0d0d14',
         font=dict(color='#e8e8f0'),
         height=500,
-        margin=dict(t=60, b=40, l=60, r=20),
+        margin=dict(t=60, b=40, l=70, r=20),
         showlegend=False,
         hovermode='x unified',
     )
