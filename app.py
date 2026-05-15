@@ -298,11 +298,6 @@ def win_prob(inning, half, outs, score_diff, total_innings=9):
 with st.sidebar:
     st.markdown("## ⚾ Baseball WPA")
     st.markdown("---")
-    st.markdown("### チーム設定")
-    st.caption("テキストを貼ると自動検出されます")
-    home_team = st.text_input("ホームチーム（1回裏）", value="")
-    away_team = st.text_input("アウェイチーム（1回表）", value="")
-    st.markdown("---")
     st.markdown("""
     **使い方**
     1. SPAIAの試合詳細を開く
@@ -310,6 +305,11 @@ with st.sidebar:
     3. 右の入力欄に貼り付け
     4. パース実行ボタンを押す
     """)
+    st.markdown("---")
+    st.caption("チーム名はテキストから自動で検出されます")
+
+home_team = ""
+away_team = ""
 
 
 # =====================
@@ -333,12 +333,7 @@ if run_btn:
         st.stop()
 
     with st.spinner("解析中..."):
-        # チーム名自動検出（手動入力が空の場合）
-        auto_home, auto_away = detect_teams(raw_text)
-        if not home_team.strip():
-            home_team = auto_home
-        if not away_team.strip():
-            away_team = auto_away
+        home_team, away_team = detect_teams(raw_text)
 
         at_bats, final_home, final_away = parse_game(
             raw_text,
