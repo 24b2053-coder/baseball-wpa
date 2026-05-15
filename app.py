@@ -581,7 +581,7 @@ buildChart();
 </script>
 """
 
-    st.components.v1.html(anim_html, height=380)
+    st.components.v1.html(anim_html, height=440)
     st.markdown("---")
 
     # グラフ描画（双方向 — 上=ホーム優勢 / 下=アウェイ優勢）
