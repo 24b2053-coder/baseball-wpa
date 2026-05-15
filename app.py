@@ -452,7 +452,7 @@ if run_btn:
         prev = wp_list[i - 1] if i > 0 else 0.5
         delta = wp_list[i] - prev
         impacts.append((abs(delta), delta, ab, i))
-    impacts.sort(reverse=True)
+    impacts.sort(key=lambda x: x[0], reverse=True)
 
     for rank, (_, delta, ab, i) in enumerate(impacts[:5], 1):
         icon  = "📈" if delta > 0 else "📉"
